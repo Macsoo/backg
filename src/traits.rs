@@ -38,14 +38,6 @@ pub trait Visible {
     fn get_visibility(&self) -> bool;
 }
 
-pub trait Group {
-
-}
-
-pub trait Partition {
-
-}
-
 pub trait Transform {
     fn get_properties(&self) -> ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32), bool);
     fn set_properties(&mut self, properties: ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32), bool));
@@ -100,31 +92,88 @@ impl<T: Transform> Visible for T {
 }
 
 pub trait Meshed {
-
+    fn get_vertices(&self) -> &[f32];
+    fn set_vertices(&mut self, vertices: &[f32]);
+    fn get_indices(&self) -> &[i32];
+    fn set_indices(&mut self, indices: &[i32]);
 }
 
-impl<T: Meshed> Group for T {
+macro_rules! object {
+    ($name:ident { $($id:ident: $ty:ty),* }) => {
+        pub struct $name {
+            vertices: Vec<f32>,
+            indices: Vec<i32>,
+            position: (f32, f32, f32),
+            rotation: (f32, f32, f32),
+            scale: (f32, f32, f32),
+            visible: bool,
+            $(
+            $id: $ty,
+            )*
+        }
 
+        impl Transform for $name {
+            fn get_properties(&self) -> ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32), bool) {
+                (self.position, self.rotation, self.scale, self.visible)
+            }
+            fn set_properties(&mut self, properties: ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32), bool)) {
+                (self.position, self.rotation, self.scale, self.visible) = properties;
+            }
+        }
+
+        impl Meshed for $name {
+            fn get_vertices(&self) -> &[f32] {
+                &self.vertices[..]
+            }
+            fn set_vertices(&mut self, vertices: &[f32]) {
+                self.vertices = vertices.to_vec();
+            }
+            fn get_indices(&self) -> &[i32] {
+                &self.indices[..]
+            }
+            fn set_indices(&mut self, indices: &[i32]) {
+                self.indices = indices.to_vec();
+            }
+        }
+
+        impl $name {
+            pub fn empty($($id: $ty)*) -> Self {
+                let position = (0.0, 0.0, 0.0);
+                let rotation = (0.0, 0.0, 0.0);
+                let scale = (1.0, 1.0, 1.0);
+                let visible = true;
+                let vertices = Vec::new();
+                let indices = Vec::new();
+                Self {
+                    position,
+                    rotation,
+                    scale,
+                    visible,
+                    vertices,
+                    indices,
+                    $($id,)*
+                }
+            }
+        }
+    };
 }
 
-impl<T: Meshed> Partition for T {
+object!(Cube { });
 
-}
+impl Cube {
+    pub fn new() -> Self {
+        let mut cube = Cube::empty();
+        cube.set_vertices(vec![
+            -1.0, -1.0, -1.0,
+            -1.0, -1.0,  1.0,
+            -1.0,  1.0, -1.0,
+            -1.0,  1.0,  1.0,
+             1.0, -1.0, -1.0,
+             1.0, -1.0,  1.0,
+             1.0,  1.0, -1.0,
+             1.0,  1.0,  1.0,
+        ].as_slice());
 
-pub trait Object {
-
-}
-
-impl<T: Object> Transform for T {
-    fn get_properties(&self) -> ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32), bool) {
-        todo!()
+        cube
     }
-
-    fn set_properties(&mut self, properties: ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32), bool)) {
-        todo!()
-    }
-}
-
-impl<T: Object> Meshed for T {
-
 }
