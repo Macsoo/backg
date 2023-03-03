@@ -4,11 +4,11 @@ use crate::gl;
 
 pub struct Window {
     x11d: *mut Display,
-    x11w: core::ffi::c_ulong
+    x11w: core::ffi::c_ulong,
 }
 
 impl Window {
-    pub fn new() -> Self {
+    pub fn new(desktop: bool) -> Self {
         unsafe {
             let x11d = XOpenDisplay(core::ptr::null());
             let x11w = XCreateSimpleWindow(
@@ -20,36 +20,37 @@ impl Window {
                 1080,
                 0,
                 0,
-                XWhitePixel(x11d, XDefaultScreen(x11d))
+                XWhitePixel(x11d, XDefaultScreen(x11d)),
             );
 
-            let cstring = CStr::from_bytes_with_nul(b"_NET_WM_WINDOW_TYPE\0").unwrap();
+            if desktop {
+                let cstring = CStr::from_bytes_with_nul(b"_NET_WM_WINDOW_TYPE\0").unwrap();
 
-            let window_type = XInternAtom(
-                x11d,
-                cstring.as_ptr(),
-                False,
-            );
+                let window_type = XInternAtom(
+                    x11d,
+                    cstring.as_ptr(),
+                    False,
+                );
 
-            let cstring2 = CStr::from_bytes_with_nul(b"_NET_WM_WINDOW_TYPE_DESKTOP\0").unwrap();
+                let cstring2 = CStr::from_bytes_with_nul(b"_NET_WM_WINDOW_TYPE_DESKTOP\0").unwrap();
 
-            let desktop = XInternAtom(
-                x11d,
-                cstring2.as_ptr(),
-                False,
-            );
+                let desktop = XInternAtom(
+                    x11d,
+                    cstring2.as_ptr(),
+                    False,
+                );
 
-            XChangeProperty(
-                x11d,
-                x11w,
-                window_type,
-                XA_ATOM,
-                32,
-                PropModeReplace,
-                std::mem::transmute(&desktop),
-                1,
-            );
-
+                XChangeProperty(
+                    x11d,
+                    x11w,
+                    window_type,
+                    XA_ATOM,
+                    32,
+                    PropModeReplace,
+                    std::mem::transmute(&desktop),
+                    1,
+                );
+            }
             XClearWindow(x11d, x11w);
 
             Window { x11d, x11w }
@@ -89,5 +90,12 @@ impl Window {
             x11::glx::glXMakeCurrent(self.x11d, self.x11w, ctx);
         }
         Ok(())
+    }
+
+    pub fn swap_buffers(&self, fps: u64) {
+        unsafe {
+            std::thread::sleep(core::time::Duration::from_micros(1_000_000 / fps));
+            x11::glx::glXSwapBuffers(self.x11d, self.x11w);
+        }
     }
 }

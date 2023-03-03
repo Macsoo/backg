@@ -19,10 +19,14 @@ fn main() {
     unsafe {
         x11::xlib::XSetErrorHandler(Some(err));
     }
-    let window = window::Window::new();
-    window.init_glx().unwrap();
+    let window = window::Window::new(false);
     window.show();
-    loop {
-
+    window.init_glx().unwrap();
+    unsafe {
+        loop {
+            gl::ClearColor(1.0, 0.0, 0.0, 1.0);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
+            window.swap_buffers(10);
+        }
     }
 }
