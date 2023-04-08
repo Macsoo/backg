@@ -1,3 +1,7 @@
+use std::ffi::CString;
+use crate::gl;
+use crate::math::{Camera, Mat4x4, Vec3};
+
 pub trait Colored {
     fn set_color(&mut self, red: u8, green: u8, blue: u8);
     fn get_color(&self) -> (u8, u8, u8);
@@ -8,29 +12,16 @@ pub trait Shadowed {
 }
 
 pub trait Positioned {
-    fn set_position(&mut self, x: f32, y: f32, z: f32);
-    fn get_position(&self) -> (f32, f32, f32);
-    fn translate_by(&mut self, dx: f32, dy: f32, dz: f32) {
-        let (x, y, z) = self.get_position();
-        self.set_position(x + dx, y + dy, z + dz)
-    }
+    fn translate_by(&mut self, v: Vec3);
 }
 
 pub trait Rotated {
-    fn set_rotation(&mut self, x: f32, y: f32, z: f32);
-    fn get_rotation(&self) -> (f32, f32, f32);
-    fn rotate_around(&mut self, degree: f32, vector: (f32, f32, f32)) {
-
-    }
+    fn rotate_around(&mut self, d: f32, v: Vec3);
 }
 
 pub trait Scaled {
-    fn set_scale(&mut self, x: f32, y: f32, z: f32);
-    fn get_scale(&self) -> (f32, f32, f32);
-    fn scale_by(&mut self, dx: f32, dy: f32, dz: f32) {
-        let (x, y, z) = self.get_scale();
-        self.set_scale(x + dx, y + dy, z + dz)
-    }
+    fn scale_by(&mut self, v: Vec3);
+    fn scaled_by(&mut self, d: f32);
 }
 
 pub trait Visible {
@@ -39,85 +30,237 @@ pub trait Visible {
 }
 
 pub trait Transform {
-    fn get_properties(&self) -> ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32), bool);
-    fn set_properties(&mut self, properties: ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32), bool));
+    fn get_matrix(&self) -> Mat4x4;
+    fn set_matrix(&mut self, matrix: Mat4x4);
 }
 
 impl<T: Transform> Positioned for T {
-    fn set_position(&mut self, x: f32, y: f32, z: f32) {
-        let mut prop = self.get_properties();
-        prop.0 = (x, y, z);
-        self.set_properties(prop);
-    }
-    fn get_position(&self) -> (f32, f32, f32) {
-        let (pos, ..) = self.get_properties();
-        pos
+    fn translate_by(&mut self, v: Vec3) {
+        let mut m = self.get_matrix();
+        m.translate(v);
+        self.set_matrix(m);
     }
 }
 
 impl<T: Transform> Rotated for T {
-    fn set_rotation(&mut self, x: f32, y: f32, z: f32) {
-        let mut prop = self.get_properties();
-        prop.1 = (x, y, z);
-        self.set_properties(prop);
-    }
-    fn get_rotation(&self) -> (f32, f32, f32) {
-        let (_, rot, ..) = self.get_properties();
-        rot
+    fn rotate_around(&mut self, d: f32, v: Vec3) {
+        let mut m = self.get_matrix();
+        m.rotate(d, v);
+        self.set_matrix(m);
     }
 }
 
 impl<T: Transform> Scaled for T {
-    fn set_scale(&mut self, x: f32, y: f32, z: f32) {
-        let mut prop = self.get_properties();
-        prop.2 = (x, y, z);
-        self.set_properties(prop);
+    fn scale_by(&mut self, v: Vec3) {
+        let mut m = self.get_matrix();
+        m.scale(v);
+        self.set_matrix(m);
     }
-    fn get_scale(&self) -> (f32, f32, f32) {
-        let (.., sca, _) = self.get_properties();
-        sca
-    }
-}
 
-impl<T: Transform> Visible for T {
-    fn set_visibility(&mut self, visibility: bool) {
-        let mut prop = self.get_properties();
-        prop.3 = visibility;
-        self.set_properties(prop);
-    }
-    fn get_visibility(&self) -> bool {
-        let (.., vis) = self.get_properties();
-        vis
+    fn scaled_by(&mut self, d: f32) {
+        let mut m = self.get_matrix();
+        m.scale(Vec3(d, d, d));
+        self.set_matrix(m);
     }
 }
 
 pub trait Meshed {
     fn get_vertices(&self) -> &[f32];
     fn set_vertices(&mut self, vertices: &[f32]);
-    fn get_indices(&self) -> &[i32];
-    fn set_indices(&mut self, indices: &[i32]);
+    fn get_indices(&self) -> &[u32];
+    fn set_indices(&mut self, indices: &[u32]);
 }
 
+pub trait Drawable {
+    fn draw(&self, camera: &Camera);
+}
+
+pub trait Shaded {
+    fn get_shader_program(&self) -> u32;
+    fn set_shader_program(&mut self, id: u32);
+    fn compile_shaders(&mut self, vertex: Option<&str>, fragment: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        unsafe {
+            let vertex_shader_id = gl::CreateShader(gl::VERTEX_SHADER);
+            let fragment_shader_id = gl::CreateShader(gl::FRAGMENT_SHADER);
+
+            let vertex_shader_code = match vertex {
+                Some(path) => std::fs::read_to_string(path)?,
+                None => String::from("#version 460 core
+layout(location = 0) in vec3 vPos;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+void main() {
+    gl_Position = projection * view * model * vec4(vPos, 1.0);
+}")
+            };
+
+            let fragment_shader_code = match fragment {
+                Some(path) => std::fs::read_to_string(path)?,
+                None => String::from("#version 460 core
+out vec3 color;
+
+void main() {
+    color = vec3(0.2, 0.7, 0.9);
+}")
+            };
+
+            let cstring = CString::new(vertex_shader_code)?;
+            let pointer = cstring.as_ptr();
+            gl::ShaderSource(vertex_shader_id, 1, &pointer, core::ptr::null());
+            gl::CompileShader(vertex_shader_id);
+
+            let mut result = 0;
+            let mut info_log_length = 0;
+            gl::GetShaderiv(vertex_shader_id, gl::COMPILE_STATUS, &mut result);
+            gl::GetShaderiv(vertex_shader_id, gl::INFO_LOG_LENGTH, &mut info_log_length);
+            if info_log_length > 0 {
+                let mut vec = Vec::with_capacity(info_log_length as usize + 1);
+                vec.extend([b' '].iter().cycle().take(info_log_length as usize));
+                let cs = CString::from_vec_with_nul_unchecked(vec);
+                gl::GetShaderInfoLog(vertex_shader_id, info_log_length, core::ptr::null_mut(), cs.as_ptr() as *mut gl::types::GLchar);
+                println!("{}", cs.to_str()?);
+            }
+
+            let cstring = CString::new(fragment_shader_code)?;
+            let pointer = cstring.as_ptr();
+            gl::ShaderSource(fragment_shader_id, 1, &pointer, core::ptr::null());
+            gl::CompileShader(fragment_shader_id);
+
+            let mut result = 0;
+            let mut info_log_length = 0;
+            gl::GetShaderiv(vertex_shader_id, gl::COMPILE_STATUS, &mut result);
+            gl::GetShaderiv(vertex_shader_id, gl::INFO_LOG_LENGTH, &mut info_log_length);
+            if info_log_length > 0 {
+                let mut vec = Vec::with_capacity(info_log_length as usize + 1);
+                vec.extend([b' '].iter().cycle().take(info_log_length as usize));
+                let cs = CString::from_vec_with_nul_unchecked(vec);
+                gl::GetShaderInfoLog(fragment_shader_id, info_log_length, core::ptr::null_mut(), cs.as_ptr() as *mut gl::types::GLchar);
+                println!("{}", cs.to_str()?);
+            }
+
+            let program_id = gl::CreateProgram();
+            gl::AttachShader(program_id, vertex_shader_id);
+            gl::AttachShader(program_id, fragment_shader_id);
+            gl::LinkProgram(program_id);
+
+            gl::GetProgramiv(program_id, gl::LINK_STATUS, &mut result);
+            gl::GetProgramiv(program_id, gl::INFO_LOG_LENGTH, &mut info_log_length);
+            if info_log_length > 0 {
+                let mut vec = Vec::with_capacity(info_log_length as usize + 1);
+                vec.extend([b' '].iter().cycle().take(info_log_length as usize));
+                let cs = CString::from_vec_with_nul_unchecked(vec);
+                gl::GetProgramInfoLog(program_id, info_log_length, core::ptr::null_mut(), cs.as_ptr() as *mut gl::types::GLchar);
+                println!("{}", cs.to_str()?);
+            }
+
+            gl::DetachShader(program_id, vertex_shader_id);
+            gl::DetachShader(program_id, fragment_shader_id);
+
+            gl::DeleteShader(vertex_shader_id);
+            gl::DeleteShader(fragment_shader_id);
+
+            self.set_shader_program(program_id);
+
+            Ok(())
+        }
+    }
+}
+
+impl<T: Transform + Visible + Meshed + Shaded> Drawable for T {
+    fn draw(&self, camera: &Camera) {
+        unsafe {
+            if !self.get_visibility() { return; }
+            let mut vao = 0;
+            gl::GenVertexArrays(1, &mut vao);
+            gl::BindVertexArray(vao);
+            let mut buffer = 0;
+            gl::GenBuffers(1, &mut buffer);
+            gl::BindBuffer(gl::ARRAY_BUFFER, buffer);
+            let vertices = self.get_vertices();
+            gl::BufferData(
+                gl::ARRAY_BUFFER,
+                std::mem::size_of_val(vertices) as _,
+                vertices.as_ptr() as _,
+                gl::STATIC_DRAW,
+            );
+            let mut buffer = 0;
+            gl::GenBuffers(1, &mut buffer);
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
+            let indices = self.get_indices();
+            gl::BufferData(
+                gl::ELEMENT_ARRAY_BUFFER,
+                std::mem::size_of_val(indices) as _,
+                indices.as_ptr() as _,
+                gl::STATIC_DRAW,
+            );
+            gl::VertexAttribPointer(
+                0,
+                3,
+                gl::FLOAT,
+                gl::FALSE,
+                (3 * std::mem::size_of::<f32>()) as _,
+                0 as _,
+            );
+            gl::EnableVertexAttribArray(0);
+            gl::UseProgram(self.get_shader_program());
+
+            let cstring = CString::new("model").unwrap();
+            let loc = gl::GetUniformLocation(self.get_shader_program(), cstring.as_ptr());
+            gl::UniformMatrix4fv(loc, 1, gl::TRUE, self.get_matrix().0.as_ptr());
+
+            let cstring = CString::new("view").unwrap();
+            let loc = gl::GetUniformLocation(self.get_shader_program(), cstring.as_ptr());
+            gl::UniformMatrix4fv(loc, 1, gl::TRUE, camera.view.0.as_ptr());
+
+            let cstring = CString::new("projection").unwrap();
+            let loc = gl::GetUniformLocation(self.get_shader_program(), cstring.as_ptr());
+            gl::UniformMatrix4fv(loc, 1, gl::TRUE, camera.projection.0.as_ptr());
+
+            gl::DrawElements(
+                gl::TRIANGLES,
+                indices.len() as _,
+                gl::UNSIGNED_INT,
+                0 as _,
+            );
+            gl::UseProgram(0);
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! object {
     ($name:ident { $($id:ident: $ty:ty),* }) => {
+        use crate::math::*;
+        use crate::traits::*;
         pub struct $name {
             vertices: Vec<f32>,
-            indices: Vec<i32>,
-            position: (f32, f32, f32),
-            rotation: (f32, f32, f32),
-            scale: (f32, f32, f32),
+            indices: Vec<u32>,
+            matrix: Mat4x4,
             visible: bool,
+            program: u32,
             $(
             $id: $ty,
             )*
         }
 
-        impl Transform for $name {
-            fn get_properties(&self) -> ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32), bool) {
-                (self.position, self.rotation, self.scale, self.visible)
+        impl Visible for $name {
+            fn set_visibility(&mut self, visible: bool) {
+                self.visible = visible;
             }
-            fn set_properties(&mut self, properties: ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32), bool)) {
-                (self.position, self.rotation, self.scale, self.visible) = properties;
+            fn get_visibility(&self) -> bool {
+                self.visible
+            }
+        }
+
+        impl Transform for $name {
+            fn get_matrix(&self) -> Mat4x4 {
+                self.matrix.clone()
+            }
+            fn set_matrix(&mut self, matrix: Mat4x4) {
+                self.matrix = matrix;
             }
         }
 
@@ -128,52 +271,115 @@ macro_rules! object {
             fn set_vertices(&mut self, vertices: &[f32]) {
                 self.vertices = vertices.to_vec();
             }
-            fn get_indices(&self) -> &[i32] {
+            fn get_indices(&self) -> &[u32] {
                 &self.indices[..]
             }
-            fn set_indices(&mut self, indices: &[i32]) {
+            fn set_indices(&mut self, indices: &[u32]) {
                 self.indices = indices.to_vec();
+            }
+        }
+
+        impl Shaded for $name {
+            fn get_shader_program(&self) -> u32 {
+                self.program
+            }
+            fn set_shader_program(&mut self, id: u32) {
+                self.program = id;
             }
         }
 
         impl $name {
             pub fn empty($($id: $ty)*) -> Self {
-                let position = (0.0, 0.0, 0.0);
-                let rotation = (0.0, 0.0, 0.0);
-                let scale = (1.0, 1.0, 1.0);
+                let matrix = Mat4x4::identity();
                 let visible = true;
                 let vertices = Vec::new();
                 let indices = Vec::new();
-                Self {
-                    position,
-                    rotation,
-                    scale,
+                let program = 0;
+                let mut sself = Self {
+                    matrix,
                     visible,
                     vertices,
                     indices,
+                    program,
                     $($id,)*
-                }
+                };
+                sself.compile_shaders(None, None);
+                sself
             }
         }
     };
-}
+    ($name:ident($v:expr, $f:expr) { $($id:ident: $ty:ty),* }) => {
+        pub struct $name {
+            vertices: Vec<f32>,
+            indices: Vec<u32>,
+            matrix: Mat4x4,
+            visible: bool,
+            program: u32,
+            $(
+            $id: $ty,
+            )*
+        }
 
-object!(Cube { });
+        impl Visible for $name {
+            fn set_visibility(&mut self, visible: bool) {
+                self.visible = visible;
+            }
+            fn get_visibility(&self) -> bool {
+                self.visible
+            }
+        }
 
-impl Cube {
-    pub fn new() -> Self {
-        let mut cube = Cube::empty();
-        cube.set_vertices(vec![
-            -1.0, -1.0, -1.0,
-            -1.0, -1.0,  1.0,
-            -1.0,  1.0, -1.0,
-            -1.0,  1.0,  1.0,
-             1.0, -1.0, -1.0,
-             1.0, -1.0,  1.0,
-             1.0,  1.0, -1.0,
-             1.0,  1.0,  1.0,
-        ].as_slice());
+        impl Transform for $name {
+            fn get_matrix(&self) -> Mat4x4 {
+                self.matrix.clone()
+            }
+            fn set_matrix(&mut self, matrix: Mat4x4) {
+                self.matrix = matrix;
+            }
+        }
 
-        cube
-    }
+        impl Meshed for $name {
+            fn get_vertices(&self) -> &[f32] {
+                &self.vertices[..]
+            }
+            fn set_vertices(&mut self, vertices: &[f32]) {
+                self.vertices = vertices.to_vec();
+            }
+            fn get_indices(&self) -> &[u32] {
+                &self.indices[..]
+            }
+            fn set_indices(&mut self, indices: &[u32]) {
+                self.indices = indices.to_vec();
+            }
+        }
+
+        impl Shaded for $name {
+            fn get_shader_program(&self) -> u32 {
+                self.program
+            }
+            fn set_shader_program(&mut self, id: u32) {
+                self.program = id;
+            }
+        }
+
+        impl $name {
+            pub fn empty($($id: $ty)*) -> Self {
+                let matrix = Mat4x4::identity();
+                let visible = true;
+                let vertices = Vec::new();
+                let indices = Vec::new();
+                let program = 0;
+                let mut sself = Self {
+                    matrix,
+                    visible,
+                    vertices,
+                    indices,
+                    program,
+                    $($id,)*
+                };
+                sself.compile_shaders(Some($v), Some($f));
+                sself
+            }
+        }
+    };
 }

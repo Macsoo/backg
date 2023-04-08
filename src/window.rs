@@ -1,10 +1,11 @@
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use x11::xlib::*;
 use crate::gl;
 
 pub struct Window {
     x11d: *mut Display,
     x11w: core::ffi::c_ulong,
+    wm_delete_message: core::ffi::c_ulong
 }
 
 impl Window {
@@ -22,6 +23,10 @@ impl Window {
                 0,
                 XWhitePixel(x11d, XDefaultScreen(x11d)),
             );
+
+            let cstring = CStr::from_bytes_with_nul(b"WM_DELETE_WINDOW\0").unwrap();
+            let mut wm_delete_message = XInternAtom(x11d, cstring.as_ptr(), False);
+            XSetWMProtocols(x11d, x11w, &mut wm_delete_message, 1);
 
             if desktop {
                 let cstring = CStr::from_bytes_with_nul(b"_NET_WM_WINDOW_TYPE\0").unwrap();
@@ -53,7 +58,7 @@ impl Window {
             }
             XClearWindow(x11d, x11w);
 
-            Window { x11d, x11w }
+            Window { x11d, x11w, wm_delete_message }
         }
     }
 
@@ -96,6 +101,23 @@ impl Window {
         unsafe {
             std::thread::sleep(core::time::Duration::from_micros(1_000_000 / fps));
             x11::glx::glXSwapBuffers(self.x11d, self.x11w);
+        }
+    }
+
+    pub fn close(&self) -> bool {
+        unsafe {
+            let mut event = std::mem::zeroed();
+            if XPending(self.x11d) == 0 { return false; }
+            XNextEvent(self.x11d, &mut event);
+            match event.get_type() {
+                ClientMessage => {
+                    if event.client_message.data.get_long(0) == self.wm_delete_message as i64 {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+            false
         }
     }
 }
