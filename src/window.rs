@@ -1,4 +1,4 @@
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use x11::xlib::*;
 use crate::gl;
 
@@ -93,6 +93,9 @@ impl Window {
             }
             let ctx = x11::glx::glXCreateContext(self.x11d, vis, 0 as x11::glx::GLXContext, 1);
             x11::glx::glXMakeCurrent(self.x11d, self.x11w, ctx);
+
+            gl::ClearColor(1.0, 0.0, 0.0, 1.0);
+            gl::Enable(gl::CULL_FACE);
         }
         Ok(())
     }
@@ -101,6 +104,7 @@ impl Window {
         unsafe {
             std::thread::sleep(core::time::Duration::from_micros(1_000_000 / fps));
             x11::glx::glXSwapBuffers(self.x11d, self.x11w);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
         }
     }
 
@@ -109,6 +113,7 @@ impl Window {
             let mut event = std::mem::zeroed();
             if XPending(self.x11d) == 0 { return false; }
             XNextEvent(self.x11d, &mut event);
+            #[allow(non_upper_case_globals)]
             match event.get_type() {
                 ClientMessage => {
                     if event.client_message.data.get_long(0) == self.wm_delete_message as i64 {

@@ -1,9 +1,14 @@
-use std::ops::{Add, Div, Index, IndexMut, Mul, MulAssign, Neg, Range, Sub};
+use std::iter::Sum;
+use std::ops::{Add, Div, Mul, MulAssign, Neg, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3(pub f32, pub f32, pub f32);
 
 impl Vec3 {
+    pub fn zero() -> Vec3 {
+        Vec3(0.0, 0.0, 0.0)
+    }
+
     pub fn up() -> Vec3 {
         Vec3(0.0, 1.0, 0.0)
     }
@@ -76,6 +81,12 @@ impl Add for Vec3 {
             self.y() + rhs.y(),
             self.z() + rhs.z(),
         )
+    }
+}
+
+impl Sum for Vec3 {
+    fn sum<I: Iterator<Item=Self>>(iter: I) -> Self {
+        iter.fold(Vec3::zero(), |acc, i| acc + i)
     }
 }
 

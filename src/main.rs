@@ -30,17 +30,30 @@ unsafe fn unsafe_main() {
     window.show();
     window.init_glx().unwrap();
 
-    let mut camera = Camera::new(16.0 / 9.0, 70.0, 1.0, 100.0);
+    let camera = Camera::new(16.0 / 9.0, 70.0, 1.0, 100.0);
 
-    let mut cube = Cube::new();
-    cube.rotate_around(45.0, Vec3::up());
-    cube.translate_by(10.0 * Vec3::back());
+    let mut sphere = Sphere::new(6);
+    sphere.scaled_by(2.0);
+    sphere.rotate_around(45.0, Vec3::front());
+    sphere.translate_by(Vec3(5.0, 0.0, -10.0));
+
+    let mut sphere2 = Sphere::new(6);
+    sphere2.scaled_by(2.0);
+    sphere2.rotate_around(-45.0, Vec3::front());
+    sphere2.translate_by(Vec3(-5.0, 0.0, -10.0));
+
     while !window.close() {
-        gl::ClearColor(1.0, 0.0, 0.0, 1.0);
-        gl::Clear(gl::COLOR_BUFFER_BIT);
+        sphere.draw(&camera);
+        sphere.translate_by(Vec3(-5.0, 0.0,  10.0));
+        sphere.rotate_around(1.0, Vec3::up());
+        sphere.rotate_around(1.0, Vec3::front());
+        sphere.translate_by(Vec3( 5.0, 0.0, -10.0));
 
-        cube.draw(&camera);
-
-        window.swap_buffers(10);
+        sphere2.draw(&camera);
+        sphere2.translate_by(Vec3( 5.0, 0.0,  10.0));
+        sphere2.rotate_around(-1.0, Vec3::up());
+        sphere2.rotate_around(-1.0, Vec3::front());
+        sphere2.translate_by(Vec3(-5.0, 0.0, -10.0));
+        window.swap_buffers(60);
     }
 }
