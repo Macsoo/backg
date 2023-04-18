@@ -221,9 +221,9 @@ impl<T: Transform + Visible + Meshed + Shaded> Drawable for T {
             gl::GenVertexArrays(1, &mut vao);
             gl::BindVertexArray(vao);
 
-            let mut buffer = 0;
-            gl::GenBuffers(1, &mut buffer);
-            gl::BindBuffer(gl::ARRAY_BUFFER, buffer);
+            let mut array_buffer = 0;
+            gl::GenBuffers(1, &mut array_buffer);
+            gl::BindBuffer(gl::ARRAY_BUFFER, array_buffer);
             let vertices = self.get_vertices();
             gl::BufferData(
                 gl::ARRAY_BUFFER,
@@ -232,9 +232,9 @@ impl<T: Transform + Visible + Meshed + Shaded> Drawable for T {
                 gl::STATIC_DRAW,
             );
 
-            let mut buffer = 0;
-            gl::GenBuffers(1, &mut buffer);
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
+            let mut element_array_buffer = 0;
+            gl::GenBuffers(1, &mut element_array_buffer);
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, element_array_buffer);
             let indices = self.get_indices();
             gl::BufferData(
                 gl::ELEMENT_ARRAY_BUFFER,
@@ -253,9 +253,9 @@ impl<T: Transform + Visible + Meshed + Shaded> Drawable for T {
             );
             gl::EnableVertexAttribArray(0);
 
-            let mut buffer = 0;
-            gl::GenBuffers(1, &mut buffer);
-            gl::BindBuffer(gl::ARRAY_BUFFER, buffer);
+            let mut normal_buffer = 0;
+            gl::GenBuffers(1, &mut normal_buffer);
+            gl::BindBuffer(gl::ARRAY_BUFFER, normal_buffer);
             let vertices = self.get_normals();
             gl::BufferData(
                 gl::ARRAY_BUFFER,
@@ -294,6 +294,10 @@ impl<T: Transform + Visible + Meshed + Shaded> Drawable for T {
                 gl::UNSIGNED_INT,
                 0 as _,
             );
+
+            gl::DeleteBuffers(1, &array_buffer);
+            gl::DeleteBuffers(1, &element_array_buffer);
+            gl::DeleteBuffers(1, &normal_buffer);
 
             gl::UseProgram(0);
         }
